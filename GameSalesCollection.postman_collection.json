@@ -1,0 +1,76 @@
+{
+	"info": {
+		"_postman_id": "a79d287d-7dd0-4af1-9b5a-1747bd00b822",
+		"name": "GameSalesCollection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "42759416"
+	},
+	"item": [
+		{
+			"name": "getTotalSales",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"fromDate\" : \"2024-04-01\",\r\n    \"toDate\" : \"2024-04-20\",\r\n    \"gameNo\": 6\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/getTotalSales",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"getTotalSales"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ImportCsv",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/C:/Users/Edward/IdeaProjects/GameSales/game_sales_data.csv"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:8080/import",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"import"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
