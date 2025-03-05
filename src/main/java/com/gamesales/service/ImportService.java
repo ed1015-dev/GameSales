@@ -40,7 +40,7 @@ public class ImportService {
     public ImportJob importCsvFile(MultipartFile file) throws IOException {
         long startTime = System.currentTimeMillis();
 
-        ImportJob importJob = ImportJob.builder()
+        ImportJob importJobz = ImportJob.builder()
                 .filename(file.getOriginalFilename())
                 .startTime(LocalDateTime.now())
                 .status("PROCESSING")
@@ -48,131 +48,138 @@ public class ImportService {
                 .failedRecords(0L)
                 .build();
 
-        importJob = importJobRepository.save(importJob);
+        importJobz = importJobRepository.save(importJobz);
 
-        final Long importJobId = importJob.getId(); // Capture ID for async operations
+        final Long importJobId = importJobz.getId(); // Capture ID for async operations
 
         log.info("Starting importing CSV jobID : {}", importJobId);
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
-            CSVParser csvParser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader);
+     //   CompletableFuture.runAsync(() -> {
 
-            List<CSVRecord> allRecords = csvParser.getRecords();
-            long totalRecords = allRecords.size();
+            ImportJob importJob = importJobRepository.findById(importJobId).orElse(null);
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+                CSVParser csvParser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader);
 
-            long csvParserExecutionTime = System.currentTimeMillis() - startTime;
-            log.info("parse all CSV completed in {} ms", csvParserExecutionTime);
+                List<CSVRecord> allRecords = csvParser.getRecords();
+                long totalRecords = allRecords.size();
 
-            log.info("Total records for CSV: {}", totalRecords);
-            importJob.setTotalRecords(totalRecords);
-            importJobRepository.save(importJob);
+                long csvParserExecutionTime = System.currentTimeMillis() - startTime;
+                log.info("parse all CSV completed in {} ms", csvParserExecutionTime);
 
-            int availableProcessors = Runtime.getRuntime().availableProcessors();
-            int threadPoolSize = Math.min(availableProcessors, 8); // Cap at 8 threads
-            ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
+                log.info("Total records for CSV: {}", totalRecords);
+                importJob.setTotalRecords(totalRecords);
+                importJobRepository.save(importJob);
 
-            // Shared counters for tracking progress
-            AtomicLong processedCount = new AtomicLong(0);
-            AtomicLong failedCount = new AtomicLong(0);
+                int availableProcessors = Runtime.getRuntime().availableProcessors();
+                int threadPoolSize = Math.min(availableProcessors, 8); // Cap at 8 threads
+                ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
 
-            // Split records into chunks for parallel processing
-            int chunkSize = Math.min(BATCH_SIZE, (int) Math.ceil((double) totalRecords / threadPoolSize));
-            List<List<CSVRecord>> recordBatches = new ArrayList<>();
+                // Shared counters for tracking progress
+                AtomicLong processedCount = new AtomicLong(0);
+                AtomicLong failedCount = new AtomicLong(0);
 
-            List<CSVRecord> currentBatch = new ArrayList<>();
-            for (CSVRecord record : allRecords) {
-                currentBatch.add(record);
-                if (currentBatch.size() >= chunkSize) {
-                    recordBatches.add(new ArrayList<>(currentBatch));
-                    currentBatch.clear();
+                // Split records into chunks for parallel processing
+                int chunkSize = Math.min(BATCH_SIZE, (int) Math.ceil((double) totalRecords / threadPoolSize));
+                List<List<CSVRecord>> recordBatches = new ArrayList<>();
+
+                List<CSVRecord> currentBatch = new ArrayList<>();
+                for (CSVRecord record : allRecords) {
+                    currentBatch.add(record);
+                    if (currentBatch.size() >= chunkSize) {
+                        recordBatches.add(new ArrayList<>(currentBatch));
+                        currentBatch.clear();
+                    }
                 }
-            }
 
-            long addBatchExecutionTime = System.currentTimeMillis() - startTime;
-            log.info("add all records to batch completed in {} ms", addBatchExecutionTime);
+                long addBatchExecutionTime = System.currentTimeMillis() - startTime;
+                log.info("add all records to batch completed in {} ms", addBatchExecutionTime);
 
-            // Add remaining records
-            if (!currentBatch.isEmpty()) {
-                recordBatches.add(currentBatch);
-            }
-
+                // Add remaining records
+                if (!currentBatch.isEmpty()) {
+                    recordBatches.add(currentBatch);
+                }
 
 
-            CompletionService<BatchResult> completionService = getBatchResultCompletionService(executorService, recordBatches, importJobId, chunkSize);
+                CompletionService<BatchResult> completionService = getBatchResultCompletionService(executorService, recordBatches, importJobId, chunkSize);
 
-            // Schedule a task to update progress
-            ScheduledExecutorService progressUpdater = Executors.newSingleThreadScheduledExecutor();
-            progressUpdater.scheduleAtFixedRate(() -> {
-                ImportJob job = importJobRepository.findById(importJobId).orElse(null);
-                if (job != null && "PROCESSING".equals(job.getStatus())) {
-                    job.setProcessedRecords(processedCount.get());
-                    job.setFailedRecords(failedCount.get());
-                    importJobRepository.save(job);
+                // Schedule a task to update progress
+                ScheduledExecutorService progressUpdater = Executors.newSingleThreadScheduledExecutor();
+                progressUpdater.scheduleAtFixedRate(() -> {
+                    ImportJob job = importJobRepository.findById(importJobId).orElse(null);
+                    if (job != null && "PROCESSING".equals(job.getStatus())) {
+                        job.setProcessedRecords(processedCount.get());
+                        job.setFailedRecords(failedCount.get());
+                        importJobRepository.save(job);
 //                    importJobRepository.flush();
-                    log.info("current job processing : {}", job);
-                }
-            }, 2, 2, TimeUnit.SECONDS);
+                        log.info("current job processing : {}", job);
+                    }
+                }, 2, 2, TimeUnit.SECONDS);
 
-            // Collect results as tasks complete
-            try {
-                for (int i = 0; i < recordBatches.size(); i++) {
-                    Future<BatchResult> future = completionService.take();
-                    BatchResult result = future.get();
-                    processedCount.addAndGet(result.getProcessedCount());
-                    failedCount.addAndGet(result.getFailedCount());
-                    log.info("processed count : {} , failed count: {}", processedCount, failedCount);
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                log.error("Error while collecting thread results", e);
-                importJob.setErrorMessage("Threading error: " + e.getMessage());
-            } finally {
-                // Shutdown executors
-                progressUpdater.shutdown();
-                executorService.shutdown();
-
+                // Collect results as tasks complete
                 try {
-                    if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
+                    for (int i = 0; i < recordBatches.size(); i++) {
+                        Future<BatchResult> future = completionService.take();
+                        BatchResult result = future.get();
+                        processedCount.addAndGet(result.getProcessedCount());
+                        failedCount.addAndGet(result.getFailedCount());
+                        log.info("processed count : {} , failed count: {}", processedCount, failedCount);
+                    }
+                } catch (InterruptedException | ExecutionException e) {
+                    log.error("Error while collecting thread results", e);
+                    importJob.setErrorMessage("Threading error: " + e.getMessage());
+                } finally {
+                    // Shutdown executors
+                    progressUpdater.shutdown();
+                    executorService.shutdown();
+
+                    try {
+                        if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
+                            executorService.shutdownNow();
+                        }
+                        if (!progressUpdater.awaitTermination(5, TimeUnit.SECONDS)) {
+                            progressUpdater.shutdownNow();
+                        }
+                    } catch (InterruptedException e) {
                         executorService.shutdownNow();
-                    }
-                    if (!progressUpdater.awaitTermination(5, TimeUnit.SECONDS)) {
                         progressUpdater.shutdownNow();
+                        Thread.currentThread().interrupt();
                     }
-                } catch (InterruptedException e) {
-                    executorService.shutdownNow();
-                    progressUpdater.shutdownNow();
-                    Thread.currentThread().interrupt();
                 }
+
+                // Update import job with final results
+                importJob = importJobRepository.findById(importJobId).orElse(importJob);
+                importJob.setProcessedRecords(processedCount.get());
+                importJob.setFailedRecords(failedCount.get());
+                importJob.setEndTime(LocalDateTime.now());
+                importJob.setStatus("COMPLETED");
+
+
+            } catch (Exception e) {
+                importJob.setStatus("FAILED");
+                importJob.setEndTime(LocalDateTime.now());
+                importJob.setErrorMessage(e.getMessage());
+                log.error("Import failed", e);
             }
 
-            // Update import job with final results
-            importJob = importJobRepository.findById(importJobId).orElse(importJob);
-            importJob.setProcessedRecords(processedCount.get());
-            importJob.setFailedRecords(failedCount.get());
-            importJob.setEndTime(LocalDateTime.now());
-            importJob.setStatus("COMPLETED");
+            // Calculate execution time and update the job
+            long executionTime = System.currentTimeMillis() - startTime;
+            log.info("Import completed in {} ms", executionTime);
 
 
-        } catch (Exception e) {
-            importJob.setStatus("FAILED");
-            importJob.setEndTime(LocalDateTime.now());
-            importJob.setErrorMessage(e.getMessage());
-            log.error("Import failed", e);
-        }
-
-        // Calculate execution time and update the job
-        long executionTime = System.currentTimeMillis() - startTime;
-        log.info("Import completed in {} ms", executionTime);
-
-
-        ImportJob result = importJobRepository.save(importJob);
+            ImportJob result = importJobRepository.save(importJob);
 //        importJobRepository.flush();
-        CompletableFuture.runAsync(aggregationService::aggregateAllData);
-        return result;
+            CompletableFuture.runAsync(aggregationService::aggregateAllData);
+
+ //       });
+
+        return importJobRepository.findById(importJobId).orElse(null);
     }
 
     private CompletionService<BatchResult> getBatchResultCompletionService(ExecutorService executorService, List<List<CSVRecord>> recordBatches, Long importJobId, int chunkSize) {
         final String sql = "INSERT IGNORE INTO game_sales (id, game_no, game_name, game_code, type, cost_price, tax, sale_price, date_of_sale) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ";
+        //if prefer existing record found update
+        //ON DUPLICATE KEY UPDATE  cost_price= VALUES(cost_price) , tax= VALUES(tax), sale_price = VALUES(sale_price), date_of_sale = VALUES(date_of_sale)
 
         // Create a completion service to track task completion
         CompletionService<BatchResult> completionService =
