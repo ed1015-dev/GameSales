@@ -1,9 +1,9 @@
 {
 	"info": {
-		"_postman_id": "a79d287d-7dd0-4af1-9b5a-1747bd00b822",
+		"_postman_id": "1ffa7920-8157-4209-a97b-77f12a7267e8",
 		"name": "GameSalesCollection",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "42759416"
+		"_exporter_id": "42851337"
 	},
 	"item": [
 		{
@@ -35,6 +35,37 @@
 					"port": "8080",
 					"path": [
 						"getTotalSales"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getTotalSales Copy",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"fromDate\" : \"2024-04-01\",\r\n    \"toDate\" : \"2024-04-20\",\r\n    \"page\" : 999\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/getGameSales",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"getGameSales"
 					]
 				}
 			},

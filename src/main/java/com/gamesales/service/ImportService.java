@@ -34,7 +34,7 @@ public class ImportService {
     private final AggregationService aggregationService;
     private final JdbcTemplate jdbcTemplate;
 
-    private static final int BATCH_SIZE = 10000;
+    private static final int BATCH_SIZE = 20000;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public ImportJob importCsvFile(MultipartFile file) throws IOException {
@@ -171,7 +171,7 @@ public class ImportService {
     }
 
     private CompletionService<BatchResult> getBatchResultCompletionService(ExecutorService executorService, List<List<CSVRecord>> recordBatches, Long importJobId, int chunkSize) {
-        final String sql = "INSERT INTO game_sales (id, game_no, game_name, game_code, type, cost_price, tax, sale_price, date_of_sale) " +
+        final String sql = "INSERT IGNORE INTO game_sales (id, game_no, game_name, game_code, type, cost_price, tax, sale_price, date_of_sale) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         // Create a completion service to track task completion
